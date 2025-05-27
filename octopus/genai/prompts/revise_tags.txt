@@ -1,0 +1,42 @@
+Analyze the following tags and suggest improvements to make them more consistent and useful for filtering:
+
+{tags}
+
+tag_mapping:
+  old_tag_name: 
+    - new_tag_name1
+    - new_tag_name2
+  # ... more mappings
+
+Guidelines:
+1. Split overly specific tags into core concepts
+   - "ai in agriculture" -> ["artificial intelligence", "agriculture"]
+   - "llm chatbot development" -> ["large language models", "chatbots", "development tools"]
+
+2. Standardize terminology
+   - Use "artificial intelligence" instead of "ai"
+   - Use "machine learning" instead of "ml"
+   - Use "large language models" instead of "llm"
+
+3. Merge similar tags
+   - Combine "ai tools" and "ai software" into "artificial intelligence"
+   - Combine "ml models" and "machine learning models" into "machine learning"
+
+4. Keep tags:
+   - Lowercase
+   - Clear and established
+   - Broad enough to be useful for filtering
+   - Specific enough to be meaningful
+
+5. Core tag categories:
+   - Core Technologies: artificial intelligence, machine learning, blockchain, cloud computing
+   - AI Subcategories: large language models, computer vision, natural language processing
+   - Industries: healthcare, finance, education, agriculture
+   - Applications: chatbots, recommendation systems, automation
+   - Products: productivity software, development tools, databases
+
+Response must be valid YAML with "tag_mapping" mapping where:
+- Keys are existing tag names
+- Values are arrays of new tag names to replace them with
+- Use [] empty array to keep tag unchanged
+- All tag names must be lowercase

@@ -1,0 +1,73 @@
+Analyze the following content and provide:
+1. A summary (max 10 sentences)
+2. Relevant tags/categories with relevance scores from 0.0 to 1.0
+3. Important entities mentioned (companies, products, people, frameworks) with relevance scores and context
+
+Content:
+<story>
+{target_content}
+</story>
+
+story post:
+<story_post>
+{story_content}
+</story_post>
+
+<comments>
+{comments_content}
+</comments>
+
+Respond in the following YAML format:
+{{
+    "summary": "your summary here",
+    "tags": [
+        {{"name": "tag name", "score": 0.88}},
+        ...
+    ],
+    "entities": [
+        {{
+            "name": "entity name",
+            "type": "company|product|person|framework",
+            "score": 0.35,
+            "context": "brief description of how entity is mentioned"
+        }},
+        ...
+    ]
+}}
+
+Tag Guidelines:
+1. Always include base technology tags with scores (0.0 if not relevant):
+   - "artificial intelligence"
+   - "machine learning"
+   - "generative ai"
+   - "large language models"
+   - "cybersecurity"
+
+2. Use standardized tag names:
+   - Use "artificial intelligence" instead of "ai"
+   - Use "machine learning" instead of "ml"
+   - Use "large language models" for LLM-specific content
+   - Use "computer vision" for vision/image AI
+   - Use "natural language processing" for text/language AI
+
+3. Split combined concepts into separate tags:
+   - If content discusses "AI in healthcare", use both "artificial intelligence" and "healthcare"
+   - If about "LLM-powered chatbot", use both "large language models" and "chatbots"
+
+4. Tag Categories to Consider:
+   - Core Technologies: "artificial intelligence", "machine learning", "blockchain", "cloud computing"
+   - AI Subcategories: "large language models", "computer vision", "natural language processing"
+   - Industries: "healthcare", "finance", "education", "agriculture"
+   - Applications: "chatbots", "recommendation systems", "automation"
+   - Products: "productivity software", "development tools", "databases"
+
+Entity Guidelines:
+- type must be one of: company, product, person, framework
+- score should reflect how prominently the entity is featured (0.0 to 1.0)
+- context should be a brief description of how the entity is mentioned or its role
+
+Rules:
+- All tag names must be lowercase
+- Use clear, established terminology
+- Keep tags broad enough to be useful for filtering but specific enough to be meaningful
+- Your response should STRICTLY contain only YAML structure without bounding characters

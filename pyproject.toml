@@ -1,0 +1,47 @@
+[project]
+name = "octopus"
+description = "Collect and process information with LLM"
+version = "0.1.0"
+authors = [
+    { name = "Andrey", "email" = "registeronsite@gmail.com" }
+]
+requires-python = ">=3.12"
+
+dependencies = [
+    "python-dotenv>=1.0.1",
+    "llama_index>=0.12.15",
+    "llama-index-embeddings-azure-openai>=0.3.0",
+    "llama-index-llms-azure-openai>=0.3.0",
+    "llama-index-vector-stores-postgres>=0.4.2",
+    "pydantic>=2.10.6",
+    "sqlalchemy>=2.0.38",
+    "alembic>=1.15.1",
+    "pydantic-settings>=2.8.1",
+    "google-api-python-client>=2.166.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-auth-oauthlib>=1.2.1",
+    "fastapi>=0.115.12",
+    "uvicorn>=0.34.0",
+    "playwright>=1.42.0",
+    "telethon>=1.39.0",
+]
+
+[tool.yapf]
+based_on_style = "pep8"
+column_limit = 100
+split_before_named_assigns = false
+dedent_closing_brackets = true
+coalesce_brackets = true
+each_dict_entry_on_separate_line = true
+# force_multiline_dict = true
+blank_line_before_nested_class_or_def = false
+disable_ending_comma_heuristic = false
+spaces_around_default_or_named_assign = false
+blank_line_before_module_docstring = false
+blank_lines_between_top_level_imports_and_variables = 2
+indent_dictionary_value = true
+
+[tool.black]
+line-length = 100
+skip-string-normalization = true  # To keep quote styles as-is.
+target-version = ['py312']

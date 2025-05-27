@@ -1,0 +1,20 @@
+# Octopus architecture and development guide
+
+## Overview
+
+Octopus is an application, whose main goal is to collect information from different sources, mostly news & articles.
+Then these articles/news/etc are processed to generate summary, classify topics they're related to.
+The end goal for this application is to get as much understanding as possible around Generative AI,
+where it progresses, what's happening in this industry, what new product emerge.
+
+## Business logic/rules.
+We should refrain from repeated content extraction for the same URL.
+The reason is that currently DiffBot API is used to extract content from the URL, the API calls are limited.
+
+## Technical
+
+The code is written in Python and should adhere to coding standards like Google styleguide, yapf rules etc.
+The code should be aligned with professional standards.
+NEVER catch "except Exception" without reraising it.
+
+
