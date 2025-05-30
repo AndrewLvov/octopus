@@ -9,7 +9,7 @@ import aiohttp
 from sqlalchemy.exc import SQLAlchemyError, DBAPIError
 
 from octopus.db.models.hacker_news import Story
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 from octopus.scripts.hn_update_story_votes import fetch_story_ids, fetch_story_info, update_story_votes
 from octopus.processing.url_normalizer import normalize_url
 
@@ -31,7 +31,7 @@ async def get_new_stories() -> None:
         logger.info("Found %d new stories", len(new_story_ids))
 
         async with aiohttp.ClientSession() as session:
-            with get_session() as db:
+            with session_scope() as db:
                 try:
                     for new_story_id in new_story_ids:
                         try:

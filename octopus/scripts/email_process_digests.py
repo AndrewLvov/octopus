@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from octopus.data_providers.gmail import GmailDigestProvider
 from octopus.db.models.emails import DigestEmail, DigestLink, EmailStory
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 from octopus.settings import settings
 from octopus.processing.url_normalizer import normalize_url_async
 
@@ -122,7 +122,7 @@ async def main():
         max_results=200
     )
 
-    with get_session() as session:
+    with session_scope() as session:
         for message_data in messages:
             email = await process_message(session, message_data, provider)
             if email:

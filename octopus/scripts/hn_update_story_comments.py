@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError, DBAPIError
 from sqlalchemy.orm import Session
 
 from octopus.db.models.hacker_news import Story, StoryComment
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +133,7 @@ async def update_story_comments() -> None:
 
     try:
         async with aiohttp.ClientSession() as session:
-            with get_session() as db:
+            with session_scope() as db:
                 # Get current time in UTC
                 now = dtime.now(tz=UTC)
 

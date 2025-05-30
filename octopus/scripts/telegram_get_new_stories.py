@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 
 from octopus.data_providers.telegram import TelegramProvider
 from octopus.db.models.telegram import TelegramStory
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 from octopus.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ async def get_latest_message_id(channel: str) -> int:
     Returns:
         int: Latest message ID or 0 if no messages exist
     """
-    with get_session() as db:
+    with session_scope() as db:
         result = db.execute(
             select(func.max(TelegramStory.message_id))
             .where(TelegramStory.channel_id == str(channel))

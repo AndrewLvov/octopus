@@ -1,6 +1,6 @@
 import logging
 from sqlalchemy import select, func, text
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 from octopus.db.models.summaries import ProcessedItem
 from octopus.db.models.hacker_news import Story
 
@@ -11,7 +11,7 @@ def cleanup_duplicate_items():
     Clean up duplicate ProcessedItems for hacker_news_stories, keeping only the latest one.
     Deletes all older duplicates.
     """
-    with get_session() as db:
+    with session_scope() as db:
         try:
             # First, get all story IDs that have duplicates
             duplicate_stories = (

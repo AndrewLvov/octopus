@@ -6,14 +6,14 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from octopus.db.models.emails import EmailStory
 from octopus.db.models.summaries import ProcessedItem, ItemTagRelation, ItemEntityRelation
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 
 logger = logging.getLogger(__name__)
 
 
 def cleanup_empty_content_stories() -> None:
     """Remove processed items where related email story has empty target content."""
-    with get_session() as db:
+    with session_scope() as db:
         try:
             # Find processed items where related email story has null content
             stmt = (

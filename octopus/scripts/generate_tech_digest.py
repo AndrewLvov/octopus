@@ -9,7 +9,7 @@ from typing import List, Tuple
 from sqlalchemy import select, and_, desc
 from sqlalchemy.orm import Session, joinedload
 
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 from octopus.db.models.summaries import (
     ProcessedItem,
     ItemTagRelation,
@@ -195,7 +195,7 @@ async def main(days: int = DEFAULT_DAYS):
         prompt_template = _load_prompt()
         prompt_tokens = _estimate_tokens(prompt_template)
         
-        with get_session() as db:
+        with session_scope() as db:
             stories = get_relevant_stories(db, days=days)
             logger.info(f"Found {len(stories)} relevant stories in the last {days} days")
             

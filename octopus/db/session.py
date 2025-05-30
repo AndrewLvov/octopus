@@ -47,6 +47,7 @@ def create_database_url() -> URL:
         database=os.environ['PGDATABASE'],
     )
 
+
 try:
     DATABASE_URL = create_database_url()
     # Configure SQLAlchemy logging more selectively
@@ -67,8 +68,8 @@ except SQLAlchemyError as e:
     logger.error(f"Failed to create database engine: {str(e)}")
     raise
 
-@contextmanager
-def get_session() -> ContextManager[Session]:
+# @contextmanager
+def get_session() -> Generator[Session, None, None]:
     """
     Get a database session.
     
@@ -87,3 +88,23 @@ def get_session() -> ContextManager[Session]:
         raise
     finally:
         session.close()
+
+
+@contextmanager
+def session_scope():
+    """
+    Provide a transactional scope around a series of operations.
+    Usage:
+        with session_scope() as db:
+            db.add(...)
+            db.commit()
+    """
+    db = next(get_session())
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()

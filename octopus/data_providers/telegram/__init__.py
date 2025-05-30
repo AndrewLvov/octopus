@@ -9,7 +9,7 @@ from telethon import TelegramClient
 from telethon.tl.types import Message
 
 from octopus.db.models.telegram import TelegramStory
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +76,9 @@ class TelegramProvider:
             channel: Channel username or ID
             messages: List of messages to save
         """
-        with get_session() as db:
+        with session_scope() as db:
             for message in messages:
-                # Check if message already exists
+                # Check if a message already exists
                 existing = db.query(TelegramStory).filter(
                     TelegramStory.channel_id == str(channel),
                     TelegramStory.message_id == str(message.id)

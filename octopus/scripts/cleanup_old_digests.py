@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, and_
 
-from ..db.session import get_session
+from ..db.session import session_scope
 from ..db.models.emails import DigestEmail, DigestLink
 
 
@@ -17,7 +17,7 @@ def cleanup_old_digests(days_to_keep: int = 30) -> None:
     """
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_to_keep)
 
-    with get_session() as session:
+    with session_scope() as session:
         # Find old emails where all links are processed
         old_emails = select(DigestEmail).where(
             and_(

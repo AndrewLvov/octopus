@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from octopus.db.models.emails import DigestLink, EmailStory
 from octopus.db.models.hacker_news import Story
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 from octopus.processing.url_normalizer import normalize_url
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,7 @@ async def main():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
-    with get_session() as session:
+    with session_scope() as session:
         try:
             # Update URLs in each table
             digest_links = await normalize_digest_links(session)

@@ -8,7 +8,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from octopus.db.models.prompts import Prompt
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 from openai import AsyncAzureOpenAI
 from openai import (
     APIError,
@@ -187,7 +187,7 @@ class GenAIProcessor:
                     result = await self._validate_and_parse_response(cleaned_content, response_format)
                     
                     # Save prompt to database
-                    with get_session() as db:
+                    with session_scope() as db:
                         db_prompt = Prompt(
                             prompt_text=prompt,
                             response_text=cleaned_content,

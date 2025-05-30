@@ -12,7 +12,7 @@ from octopus.db.models.hacker_news import Story, StoryVotes
 from octopus.db.models.summaries import (
     ProcessedItem, ItemTag, ItemTagRelation, ItemEntity, ItemEntityRelation
 )
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ async def process_stories(force_regenerate: bool = False) -> None:
     Args:
         force_regenerate: If True, regenerate summaries for all stories, even if they already exist
     """
-    with get_session() as db:
+    with session_scope() as db:
         try:
             # Ensure required tags exist
             ensure_required_tags(db)

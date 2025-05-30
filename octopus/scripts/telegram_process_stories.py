@@ -16,7 +16,7 @@ from octopus.db.models.summaries import (
     ProcessedItem, ItemTagRelation, ItemEntityRelation
 )
 from octopus.db.models.url_content import URLContent
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 from octopus.processing.content_extractor import DiffBotExtractor
 from octopus.db.operations import get_or_create_tag, get_or_create_entity, ensure_required_tags
 
@@ -70,7 +70,7 @@ async def process_telegram_stories(force_regenerate: bool = False) -> None:
     Args:
         force_regenerate: If True, regenerate summaries for all stories, even if they already exist
     """
-    with get_session() as db:
+    with session_scope() as db:
         try:
             # Ensure required tags exist
             ensure_required_tags(db, REQUIRED_TAGS)

@@ -12,7 +12,7 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import SQLAlchemyError, DBAPIError
 from octopus.db.models.hacker_news import Story, StoryVotes
 from octopus.data_providers.hacker_news import API_URL
-from octopus.db.session import get_session
+from octopus.db.session import session_scope
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ async def update_story_votes() -> None:
     logger.info("Updating story votes")
     ssl_context = ssl.create_default_context(cafile=certifi.where())
     
-    with get_session() as db:
+    with session_scope() as db:
         try:
             async with aiohttp.ClientSession() as session:
                 # Load all stories with their IDs
