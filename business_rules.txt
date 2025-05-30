@@ -1,0 +1,4 @@
+Endpoints
+
+/api/stories
+The endpoint should allow start_date and end_date parameters to filter stories by their creation date.
