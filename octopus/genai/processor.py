@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 import yaml
 from pydantic import BaseModel, ValidationError
 
+from httpx import Timeout
 from octopus.db.models.prompts import Prompt
 from octopus.db.session import session_scope
 from openai import AsyncAzureOpenAI
@@ -97,6 +98,13 @@ class GenAIProcessor:
             api_key=settings.azure_openai_api_key,
             azure_endpoint=settings.azure_openai_endpoint,
             api_version=settings.azure_openai_version,
+            azure_deployment=settings.azure_openai_deployment_name,
+            timeout=Timeout(
+                120.0,  # total timeout
+                read=120.0,
+                write=60.0,
+                connect=10.0
+            ),
         )
         self._default_temperature = temperature
 
@@ -141,14 +149,16 @@ class GenAIProcessor:
         Returns:
             Raw response content
         """
-        response = await self._async_llm.chat.completions.create(
+        async for chunk in await self._async_llm.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model=settings.azure_openai_deployment,
-            temperature=temperature if temperature is not None else self._default_temperature,
-            max_tokens=max_tokens,
-            stream=False
-        )
-        return response.choices[0].message.content
+            model=settings.azure_openai_deployment_name,
+            # temperature=temperature if temperature is not None else self._default_temperature,
+            # max_tokens=max_tokens,
+            stream=True,
+        ):
+            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                return chunk.choices[0].delta.content
+        # return response.choices[0].message.content
 
     async def process(
         self,

@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     azure_openai_api_key: str
     azure_openai_endpoint: str
     azure_openai_version: str = "2024-08-01-preview"
-    azure_openai_deployment: str = "gpt-4o"
+    azure_openai_deployment_name: str = "gpt-4o"
 
     # DiffBot API settings
     diffbot_api_key: str
