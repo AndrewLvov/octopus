@@ -1,4 +1,4 @@
-import os
+
 import logging
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict
@@ -198,6 +198,7 @@ async def get_prompt(
         logger.error(f"Database error in get_prompt: {str(e)}")
         raise HTTPException(status_code=500, detail="Database error")
 
+
 @app.get("/api/stories", response_model=List[StoryBrief])
 async def get_stories(
     min_votes: Optional[int] = Query(None, ge=0, description="Minimum number of votes"),
@@ -205,10 +206,13 @@ async def get_stories(
         None,
         description="Order by field (posted_at_asc, posted_at_desc, votes_asc, votes_desc)"
     ),
+    start_date: Optional[dtime] = Query(None, description="Filter stories posted at or after this date (ISO 8601)"),
+    end_date: Optional[dtime] = Query(None, description="Filter stories posted at or before this date (ISO 8601)"),
+    limit: int = Query(20, ge=1, le=50, description="Maximum number of stories to return (max 50)"),
     db: Session = Depends(get_session)
 ) -> List[StoryBrief]:
     """
-    Retrieve all stories with their basic information and latest vote count.
+    Retrieve all stories with their basic information and the latest vote count.
     
     Args:
         min_votes: Optional minimum number of votes to filter by
@@ -244,6 +248,12 @@ async def get_stories(
                 Story.id == latest_votes.c.story_id
             ).where(latest_votes.c.vote_count >= min_votes)
 
+        # Apply date filters if specified
+        if start_date is not None:
+            query = query.where(Story.posted_at >= start_date)
+        if end_date is not None:
+            query = query.where(Story.posted_at <= end_date)
+
         # Apply ordering
         if order_by:
             if order_by == 'posted_at_asc':
@@ -255,6 +265,7 @@ async def get_stories(
             elif order_by == 'votes_desc':
                 query = query.order_by(latest_votes.c.vote_count.desc())
 
+        query = query.limit(limit)
         result = db.execute(query)
         stories = result.unique().scalars().all()
         
@@ -435,7 +446,14 @@ def init_vector_store() -> tuple[AzureOpenAI, PGVectorStore, AzureOpenAIEmbeddin
             api_version=os.environ['AZURE_OPENAI_VERSION'],
             model=os.environ['AZURE_OPENAI_DEPLOYMENT_NAME'],
         )
-        
+        # self._llm = AzureOpenAI(
+        #     api_key=s.AZURE_OPENAI_API_KEY,
+        #     azure_endpoint=s.AZURE_OPENAI_ENDPOINT,
+        #     api_version=s.AZURE_OPENAI_VERSION,
+        #     azure_deployment=model,  # For Azure, model name is the deployment name
+        #     model=s.LLM_MODEL,
+        # )
+
         vector_db = PGVectorStore(
             connection_string=os.environ['VECTOR_DB_URL'],
             table_name="llm_vector_store",
