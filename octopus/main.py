@@ -1,4 +1,4 @@
-
+import time
 import logging
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict
@@ -98,14 +98,15 @@ class VoteHistory(BaseModel):
 class StoryBrief(BaseModel):
     id: int
     title: str
-    url: str  # HN URL
-    target_url: Optional[str]  # Original article URL
+    url: str  # Main URL for the story
+    target_url: Optional[str]  # Original article URL (if different)
     posted_at: dtime
-    user: str
+    user: Optional[str]  # Not all sources may have a user
     latest_vote_count: Optional[int] = None
     summary: Optional[str] = None
     tags: List[TagScore] = []
     entities: List[EntityScore] = []
+    source: str  # Where the story came from (e.g., 'hacker_news', 'email', 'telegram')
 
     class Config:
         from_attributes = True
@@ -201,98 +202,65 @@ async def get_prompt(
 
 @app.get("/api/stories", response_model=List[StoryBrief])
 async def get_stories(
-    min_votes: Optional[int] = Query(None, ge=0, description="Minimum number of votes"),
+    min_votes: Optional[int] = Query(None, ge=0, description="Minimum number of votes (only for HN)"),
     order_by: Optional[str] = Query(
         None,
         description="Order by field (posted_at_asc, posted_at_desc, votes_asc, votes_desc)"
     ),
     start_date: Optional[dtime] = Query(None, description="Filter stories posted at or after this date (ISO 8601)"),
     end_date: Optional[dtime] = Query(None, description="Filter stories posted at or before this date (ISO 8601)"),
-    limit: int = Query(20, ge=1, le=50, description="Maximum number of stories to return (max 50)"),
+    limit: int = Query(50, ge=1, le=1000, description="Maximum number of stories to return (max 50)"),
     db: Session = Depends(get_session)
 ) -> List[StoryBrief]:
     """
-    Retrieve all stories with their basic information and the latest vote count.
-    
-    Args:
-        min_votes: Optional minimum number of votes to filter by
-        order_by: Optional field to order results by
-        db: Database session provided by FastAPI dependency
-        
-    Returns:
-        List[StoryBrief]: List of stories with their basic information
-        
-    Raises:
-        HTTPException: If there's a database error
+    Retrieve all stories from all sources with their basic information and the latest vote count (if available).
     """
     try:
-        # Base query joining stories with their summaries
-        query = (
-            select(Story)
+        t0 = time.perf_counter()
+        # --- HACKER NEWS STORIES ---
+        hn_query = (
+            select(Story, ProcessedItem)
             .outerjoin(
                 ProcessedItem,
                 (ProcessedItem.related_item_type == 'hacker_news_story') &
                 (ProcessedItem.related_item_id == Story.id)
             )
-            .options(joinedload(Story.votes))
+            .options(
+                joinedload(Story.votes),
+                joinedload(ProcessedItem.tags).joinedload(ItemTagRelation.tag),
+                joinedload(ProcessedItem.entities).joinedload(ItemEntityRelation.entity)
+            )
         )
-
-        # Apply minimum votes filter if specified
+        if start_date is not None:
+            hn_query = hn_query.where(Story.posted_at >= start_date)
+        if end_date is not None:
+            hn_query = hn_query.where(Story.posted_at <= end_date)
         if min_votes is not None:
             latest_votes = select(StoryVotes.story_id, StoryVotes.vote_count).distinct(
                 StoryVotes.story_id
             ).order_by(StoryVotes.story_id, StoryVotes.tstamp.desc()).subquery()
-            
-            query = query.join(
+            hn_query = hn_query.join(
                 latest_votes,
                 Story.id == latest_votes.c.story_id
             ).where(latest_votes.c.vote_count >= min_votes)
-
-        # Apply date filters if specified
-        if start_date is not None:
-            query = query.where(Story.posted_at >= start_date)
-        if end_date is not None:
-            query = query.where(Story.posted_at <= end_date)
-
-        # Apply ordering
         if order_by:
             if order_by == 'posted_at_asc':
-                query = query.order_by(Story.posted_at.asc())
+                hn_query = hn_query.order_by(Story.posted_at.asc())
             elif order_by == 'posted_at_desc':
-                query = query.order_by(Story.posted_at.desc())
+                hn_query = hn_query.order_by(Story.posted_at.desc())
             elif order_by == 'votes_asc':
-                query = query.order_by(latest_votes.c.vote_count.asc())
+                hn_query = hn_query.order_by(latest_votes.c.vote_count.asc())
             elif order_by == 'votes_desc':
-                query = query.order_by(latest_votes.c.vote_count.desc())
+                hn_query = hn_query.order_by(latest_votes.c.vote_count.desc())
+        hn_query = hn_query.limit(limit)
+        hn_results = db.execute(hn_query).unique().all()
 
-        query = query.limit(limit)
-        result = db.execute(query)
-        stories = result.unique().scalars().all()
-        
-        # Format response with vote history, summary and tags
         response = []
-        for story in stories:
-            # Query summary and tags for the story
-            summary_query = (
-                select(ProcessedItem)
-                .where(
-                    ProcessedItem.related_item_type == 'hacker_news_story',
-                    ProcessedItem.related_item_id == story.id
-                )
-                .options(
-                    joinedload(ProcessedItem.tags).joinedload(ItemTagRelation.tag),
-                    joinedload(ProcessedItem.entities).joinedload(ItemEntityRelation.entity)
-                )
-            )
-            summary_result = db.execute(summary_query)
-            processed_item = summary_result.unique().scalar_one_or_none()
-
-            # Get latest vote count
+        # HN
+        for story, processed_item in hn_results:
             latest_vote = next(iter(story.votes), None)
             latest_vote_count = latest_vote.vote_count if latest_vote else None
-
-            # Convert to response format
-            story_response = StoryBrief(
+            response.append(StoryBrief(
                 id=story.id,
                 title=story.title,
                 url=f"https://news.ycombinator.com/item?id={story.id}",
@@ -301,27 +269,89 @@ async def get_stories(
                 user=story.user,
                 latest_vote_count=latest_vote_count,
                 summary=processed_item.summary if processed_item else None,
-                tags=[
-                    TagScore(
-                        name=tag_relation.tag.name,
-                        score=tag_relation.relation_value
-                    )
-                    for tag_relation in (processed_item.tags if processed_item else [])
-                ],
-                entities=[
-                    EntityScore(
-                        name=entity_relation.entity.name,
-                        type=entity_relation.entity.type,
-                        score=entity_relation.relation_value,
-                        context=entity_relation.context
-                    )
-                    for entity_relation in (processed_item.entities if processed_item else [])
-                ]
-            )
-            response.append(story_response)
+                tags=[TagScore(name=tag_relation.tag.name, score=tag_relation.relation_value) for tag_relation in (processed_item.tags if processed_item else [])],
+                entities=[EntityScore(name=entity_relation.entity.name, type=entity_relation.entity.type, score=entity_relation.relation_value, context=entity_relation.context) for entity_relation in (processed_item.entities if processed_item else [])],
+                source="hacker_news"
+            ))
+        t1 = time.perf_counter()
+        logger.info(f"get_stories: fetched {len(hn_results)} HN stories in {t1-t0:.3f}s")
 
-        return response
-        
+        # --- EMAIL STORIES ---
+        from octopus.db.models.emails import EmailStory
+        email_query = (
+            select(EmailStory, ProcessedItem)
+            .outerjoin(
+                ProcessedItem,
+                (ProcessedItem.related_item_type == 'email_story') &
+                (ProcessedItem.related_item_id == EmailStory.id)
+            )
+            .options(
+                joinedload(ProcessedItem.tags).joinedload(ItemTagRelation.tag),
+                joinedload(ProcessedItem.entities).joinedload(ItemEntityRelation.entity)
+            )
+        )
+        if start_date is not None:
+            email_query = email_query.where(EmailStory.discovered_at >= start_date)
+        if end_date is not None:
+            email_query = email_query.where(EmailStory.discovered_at <= end_date)
+        email_query = email_query.order_by(EmailStory.discovered_at.desc()).limit(limit)
+        email_results = db.execute(email_query).unique().all()
+
+        # EMAIL
+        for story, processed_item in email_results:
+            response.append(StoryBrief(
+                id=story.id,
+                title=story.title,
+                url=story.url,
+                target_url=story.url,
+                posted_at=story.discovered_at,
+                user=None,
+                latest_vote_count=None,
+                summary=processed_item.summary if processed_item else None,
+                tags=[TagScore(name=tag_relation.tag.name, score=tag_relation.relation_value) for tag_relation in (processed_item.tags if processed_item else [])],
+                entities=[EntityScore(name=entity_relation.entity.name, type=entity_relation.entity.type, score=entity_relation.relation_value, context=entity_relation.context) for entity_relation in (processed_item.entities if processed_item else [])],
+                source="email"
+            ))
+        t2 = time.perf_counter()
+        logger.info(f"get_stories: fetched {len(email_results)} email stories in {t2-t1:.3f}s")
+
+        # --- TELEGRAM STORIES ---
+        from octopus.db.models.telegram import TelegramStory
+        telegram_query = select(TelegramStory)
+        if start_date is not None:
+            telegram_query = telegram_query.where(TelegramStory.posted_at >= start_date)
+        if end_date is not None:
+            telegram_query = telegram_query.where(TelegramStory.posted_at <= end_date)
+        telegram_query = telegram_query.order_by(TelegramStory.posted_at.desc()).limit(limit)
+        telegram_stories = db.execute(telegram_query).unique().scalars().all()
+        t3 = time.perf_counter()
+        logger.info(f"get_stories: fetched {len(telegram_stories)} telegram stories in {t3-t2:.3f}s")
+
+        # TELEGRAM
+        for story in telegram_stories:
+            processed_item = story.processed_item
+            url = story.urls[0] if story.urls and len(story.urls) > 0 else None
+            response.append(StoryBrief(
+                id=story.id,
+                title=story.content[:100] if story.content else f"Telegram message {story.id}",
+                url=url or f"https://t.me/c/{story.channel_id}/{story.message_id}",
+                target_url=url,
+                posted_at=story.posted_at,
+                user=None,
+                latest_vote_count=None,
+                summary=processed_item.summary if processed_item else None,
+                tags=[TagScore(name=tag_relation.tag.name, score=tag_relation.relation_value) for tag_relation in (processed_item.tags if processed_item else [])],
+                entities=[EntityScore(name=entity_relation.entity.name, type=entity_relation.entity.type, score=entity_relation.relation_value, context=entity_relation.context) for entity_relation in (processed_item.entities if processed_item else [])],
+                source="telegram"
+            ))
+
+        t4 = time.perf_counter()
+        logger.info(f"get_stories: built response for {len(response)} stories in {t4-t3:.3f}s")
+        # Sort all stories by posted_at desc and apply global limit
+        response.sort(key=lambda s: s.posted_at, reverse=True)
+        t5 = time.perf_counter()
+        logger.info(f"get_stories: sorted and limited response in {t5-t4:.3f}s, total time: {t5-t0:.3f}s")
+        return response[:limit]
     except SQLAlchemyError as e:
         logger.error(f"Database error in get_stories: {str(e)}")
         raise HTTPException(status_code=500, detail="Database error")

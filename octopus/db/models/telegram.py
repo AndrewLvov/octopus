@@ -5,7 +5,8 @@ from sqlalchemy import Column, Integer, String, DateTime, Index, UniqueConstrain
 from sqlalchemy.dialects.postgresql import ARRAY
 
 from .base import Base
-
+from sqlalchemy.orm import relationship, foreign
+from octopus.db.models.summaries import ProcessedItem
 
 class TelegramStory(Base):
     """
@@ -35,6 +36,14 @@ class TelegramStory(Base):
         Index('idx_telegram_stories_channel', 'channel_id'),
         Index('idx_telegram_stories_message', 'message_id'),
         UniqueConstraint('channel_id', 'message_id', name='uq_telegram_stories_channel_message'),
+    )
+
+    # Relationship to ProcessedItem for summary/tags/entities
+    processed_item = relationship(
+        "ProcessedItem",
+        primaryjoin="and_(foreign(ProcessedItem.related_item_id)==TelegramStory.id, ProcessedItem.related_item_type=='telegram_story')",
+        uselist=False,
+        viewonly=True
     )
 
     def __repr__(self) -> str:
