@@ -4,8 +4,12 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Dict
 from decimal import Decimal
 from datetime import datetime as dtime
+import os
+from typing import List
 
 from fastapi import FastAPI, Depends, HTTPException, Query
+from octopus.db.models.digests import Digest, DigestStory
+from octopus.schemas.digest import DigestResponse, DigestStoryBase
 from sqlalchemy import desc
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
@@ -354,6 +358,7 @@ async def get_stories(
         return response[:limit]
     except SQLAlchemyError as e:
         logger.error(f"Database error in get_stories: {str(e)}")
+        raise
         raise HTTPException(status_code=500, detail="Database error")
 
 @app.get("/api/stories/{story_id}", response_model=StoryDetailResponse)
@@ -442,6 +447,118 @@ async def get_story(
         raise HTTPException(status_code=500, detail="Database error")
 
 
+@app.get("/api/digests", response_model=List[DigestResponse])
+async def get_digests(
+    start_date: Optional[dtime] = Query(None, description="Filter digests created at or after this date (ISO 8601)"),
+    end_date: Optional[dtime] = Query(None, description="Filter digests created at or before this date (ISO 8601)"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_session)
+) -> List[DigestResponse]:
+    """
+    Get tech digests with pagination and optional date filtering.
+
+    Args:
+        start_date: Filter digests created at or after this date
+        end_date: Filter digests created at or before this date
+        skip: Number of digests to skip (for pagination)
+        limit: Maximum number of digests to return
+        db: Database session
+
+    Returns:
+        List[DigestResponse]: List of digests with their stories
+
+    Raises:
+        HTTPException: If database error occurs
+    """
+    try:
+        query = (
+            select(Digest)
+            .options(
+                joinedload(Digest.stories)
+                .joinedload(DigestStory.processed_item)
+                .options(
+                    joinedload(ProcessedItem.tags).joinedload(ItemTagRelation.tag),
+                    joinedload(ProcessedItem.entities).joinedload(ItemEntityRelation.entity)
+                )
+            )
+            .order_by(desc(Digest.created_at))
+        )
+
+        if start_date:
+            query = query.where(Digest.created_at >= start_date)
+        if end_date:
+            query = query.where(Digest.created_at <= end_date)
+
+        query = query.offset(skip).limit(limit)
+        result = db.execute(query)
+        digests = result.unique().scalars().all()
+
+        responses = []
+        for digest in digests:
+            # Convert each digest to a DigestResponse
+            response_data = {
+                'id': digest.id,
+                'content': digest.content,
+                'start_date': digest.start_date,
+                'end_date': digest.end_date,
+                'created_at': digest.created_at,
+                'file_path': digest.file_path,
+                'stories': [DigestStoryBase.model_validate(story) for story in digest.stories]
+            }
+            responses.append(DigestResponse(**response_data))
+
+        return responses
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_digests: {str(e)}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+
+@app.get("/api/digests/{digest_id}", response_model=DigestResponse)
+async def get_digest(
+    digest_id: int,
+    db: Session = Depends(get_session)
+) -> DigestResponse:
+    """
+    Get a specific tech digest by ID.
+
+    Args:
+        digest_id: ID of the digest to retrieve
+        db: Database session
+
+    Returns:
+        DigestResponse: The requested digest with its stories
+
+    Raises:
+        HTTPException: If digest not found or database error occurs
+    """
+    try:
+        query = (
+            select(Digest)
+            .where(Digest.id == digest_id)
+            .options(
+                joinedload(Digest.stories)
+                .joinedload(DigestStory.processed_item)
+                .options(
+                    joinedload(ProcessedItem.tags).joinedload(ItemTagRelation.tag),
+                    joinedload(ProcessedItem.entities).joinedload(ItemEntityRelation.entity)
+                )
+            )
+        )
+        result = db.execute(query)
+        digest = result.unique().scalar_one_or_none()
+
+        if not digest:
+            raise HTTPException(status_code=404, detail="Digest not found")
+
+        return DigestResponse.from_orm(digest)
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_digest: {str(e)}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+
 def init_vector_store() -> tuple[AzureOpenAI, PGVectorStore, AzureOpenAIEmbedding]:
     """
     Initialize and return vector store components.
@@ -512,6 +629,7 @@ def init_vector_store() -> tuple[AzureOpenAI, PGVectorStore, AzureOpenAIEmbeddin
         logger.error(f"Runtime error initializing vector store: {str(e)}")
         raise RuntimeError(f"Initialization failed: {str(e)}")
 
+
 def load_and_index_documents(
     vector_store: PGVectorStore,
     embed_model: AzureOpenAIEmbedding,
@@ -526,7 +644,7 @@ def load_and_index_documents(
         llm: Language model for document processing
         
     Returns:
-        Optional[VectorStoreIndex]: The created index, or None if no documents found
+        Optional[VectorStoreIndex]: The created index, or None if no documents are found
         
     Raises:
         FileNotFoundError: If the documents directory doesn't exist

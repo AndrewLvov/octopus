@@ -2,9 +2,9 @@
 
 import logging
 import os
-from datetime import datetime, timedelta, UTC
+from datetime import datetime as dtime, timedelta, UTC
 from decimal import Decimal
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from sqlalchemy import select, and_, desc
 from sqlalchemy.orm import Session, joinedload
@@ -17,6 +17,7 @@ from octopus.db.models.summaries import (
     ItemEntityRelation,
     ItemEntity
 )
+from octopus.db.models.digests import Digest, DigestStory
 from octopus.db.models.hacker_news import Story
 from octopus.db.models.emails import EmailStory
 from octopus.db.models.telegram import TelegramStory
@@ -35,12 +36,13 @@ RELEVANT_TAGS = [
     "natural language processing"
 ]
 
-MIN_TAG_SCORE = Decimal("0.3")  # Lower threshold to catch more potential insights
+MIN_TAG_SCORE = Decimal("0.3")  # Lower the threshold to catch more potential insights
 DEFAULT_DAYS = 7
 
 # Approximate token limits (4 chars per token)
 MAX_CONTEXT_TOKENS = 100_000  # Leave room for prompt and response
 CHARS_PER_TOKEN = 4
+
 
 def _load_prompt() -> str:
     """Load the tech digest prompt."""
@@ -52,9 +54,11 @@ def _load_prompt() -> str:
         logger.error(f"Prompt file not found: {prompt_path}")
         raise
 
+
 def _estimate_tokens(text: str) -> int:
-    """Estimate number of tokens in text using character count."""
+    """Estimate the number of tokens in text using character count."""
     return len(text) // CHARS_PER_TOKEN
+
 
 def _format_story_context(story: ProcessedItem, db: Session, use_summary: bool = False) -> tuple[str, int]:
     """
@@ -113,14 +117,14 @@ ID: {story.related_item_id}
 """
     return formatted_context, len(content)
 
+
 def get_relevant_stories(
     db: Session,
-    days: int = DEFAULT_DAYS,
+    start_date: dtime,
+    end_date: dtime,
     min_score: Decimal = MIN_TAG_SCORE
 ) -> List[ProcessedItem]:
-    """Get relevant stories from the last N days."""
-    cutoff_date = datetime.now(UTC) - timedelta(days=days)
-    
+    """Get relevant stories within the specified date range."""
     # Query for relevant stories
     stmt = (
         select(ProcessedItem)
@@ -128,7 +132,8 @@ def get_relevant_stories(
         .join(ItemTag)
         .where(
             and_(
-                ProcessedItem.created_at >= cutoff_date,
+                ProcessedItem.created_at >= start_date,
+                ProcessedItem.created_at <= end_date,
                 ItemTag.name.in_(RELEVANT_TAGS),
                 ItemTagRelation.relation_value >= min_score
             )
@@ -143,10 +148,11 @@ def get_relevant_stories(
     
     return db.execute(stmt).unique().scalars().all()
 
+
 def prepare_context(stories: List[ProcessedItem], prompt_tokens: int, db: Session) -> str:
     """
     Prepare context for the LLM by fitting stories within token limit.
-    Falls back to summaries for largest stories if content exceeds token limit.
+    Falls back to summaries for largest stories if content exceeds the token limit.
     """
     available_tokens = MAX_CONTEXT_TOKENS - prompt_tokens
     context_parts = []
@@ -161,11 +167,12 @@ def prepare_context(stories: List[ProcessedItem], prompt_tokens: int, db: Sessio
         total_tokens += tokens
         context_parts.append(story_context)
     
-    # If total tokens exceed limit, replace largest stories with summaries
+    # If total tokens exceed the limit, replace the largest stories with summaries
     if total_tokens > available_tokens:
-        logger.info(f"Total tokens ({total_tokens}) exceed limit ({available_tokens}), replacing largest stories with summaries")
+        logger.info(f"Total tokens ({total_tokens}) exceed limit ({available_tokens}), "
+                    f"replacing largest stories with summaries")
         
-        # Sort stories by content length, largest first
+        # Sort stories by content length, the largest first
         story_sizes.sort(key=lambda x: x[1], reverse=True)
         
         # Replace largest stories with summaries until we're under the token limit
@@ -187,8 +194,14 @@ def prepare_context(stories: List[ProcessedItem], prompt_tokens: int, db: Sessio
     
     return "\n".join(context_parts)
 
-async def main(days: int = DEFAULT_DAYS):
-    """Generate and print tech digest for the specified time period."""
+
+async def main(start_date: Optional[dtime] = None, end_date: Optional[dtime] = None):
+    """Generate and print tech digest for the specified time period.
+    
+    Args:
+        start_date: Start date for the digest. If None, defaults to DEFAULT_DAYS ago
+        end_date: End date for the digest. If None, defaults to current time
+    """
     processor = GenAIProcessor()
     
     try:
@@ -196,8 +209,14 @@ async def main(days: int = DEFAULT_DAYS):
         prompt_tokens = _estimate_tokens(prompt_template)
         
         with session_scope() as db:
-            stories = get_relevant_stories(db, days=days)
-            logger.info(f"Found {len(stories)} relevant stories in the last {days} days")
+            # Set default date range if not provided
+            if end_date is None:
+                end_date = dtime.now(UTC)
+            if start_date is None:
+                start_date = end_date - timedelta(days=DEFAULT_DAYS)
+
+            stories = get_relevant_stories(db, start_date=start_date, end_date=end_date)
+            logger.info(f"Found {len(stories)} relevant stories between {start_date} and {end_date}")
             
             if not stories:
                 print("No relevant stories found in the specified time period.")
@@ -218,20 +237,40 @@ async def main(days: int = DEFAULT_DAYS):
                 temperature=0.3  # Lower temperature for more focused analysis
             )
             
-            # Create digests directory if it doesn't exist
+            # Create a digests directory if it doesn't exist
             os.makedirs("data/digests", exist_ok=True)
             
-            # Generate filename with current datetime
-            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Generate filename with the current datetime
+            current_time = dtime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"data/digests/tech_digest_{current_time}.txt"
             
             # Write digest to file
             with open(filename, "w") as f:
-                f.write(f"Tech Digest - Last {days} Days\n")
+                f.write(f"Tech Digest - {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}\n")
                 f.write("=" * 40 + "\n")
                 f.write(digest)
             
             logger.info(f"Digest saved to {filename}")
+            
+            # Save digest to a database
+            db_digest = Digest(
+                content=digest,
+                start_date=start_date,
+                end_date=end_date,
+                file_path=filename
+            )
+            db.add(db_digest)
+            
+            # Link stories to digest
+            for story in stories:
+                db_digest_story = DigestStory(
+                    digest=db_digest,
+                    processed_item_id=story.id
+                )
+                db.add(db_digest_story)
+            
+            db.commit()
+            logger.info(f"Digest saved to database with ID {db_digest.id}")
             
     except Exception as e:
         logger.error(f"Error generating digest: {str(e)}")
@@ -250,5 +289,18 @@ if __name__ == "__main__":
         ]
     )
     
-    days = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_DAYS
-    asyncio.run(main(days))
+    # Parse command line arguments for date range
+    start_date = None
+    end_date = None
+    
+    if len(sys.argv) > 2:
+        # If both dates provided: start_date end_date
+        start_date = dtime.fromisoformat(sys.argv[1]).replace(tzinfo=UTC)
+        end_date = dtime.fromisoformat(sys.argv[2]).replace(tzinfo=UTC)
+    elif len(sys.argv) > 1:
+        # If only days provided (backward compatibility)
+        days = int(sys.argv[1])
+        end_date = dtime.now(UTC)
+        start_date = end_date - timedelta(days=days)
+    
+    asyncio.run(main(start_date, end_date))

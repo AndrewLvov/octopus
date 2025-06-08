@@ -149,16 +149,21 @@ class GenAIProcessor:
         Returns:
             Raw response content
         """
-        async for chunk in await self._async_llm.chat.completions.create(
+        full_response = []
+        completion = await self._async_llm.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model=settings.azure_openai_deployment_name,
+            # not supported by o4-mini
             # temperature=temperature if temperature is not None else self._default_temperature,
             # max_tokens=max_tokens,
             stream=True,
-        ):
+        )
+        
+        async for chunk in completion:
             if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                return chunk.choices[0].delta.content
-        # return response.choices[0].message.content
+                full_response.append(chunk.choices[0].delta.content)
+        
+        return "".join(full_response)
 
     async def process(
         self,
